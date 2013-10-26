@@ -25,9 +25,7 @@ def normalize(vec):
 
 def do_estep(args):
     """Given a document d, Multiplies document-topic and topic-word vectors for 
-    each word. For multiprocessing. Similar to do_estep(), except that this 
-    method uses PyTables; consequently, results are passed back to the parent
-    rather than updating data in each parallel process.
+    each word. For multiprocessing. 
     
     Args
         args (tuple):
