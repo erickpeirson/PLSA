@@ -1,19 +1,27 @@
-This is a PLSA (Probabilistic Latent Semantic Analysis) implementation via the EM (Expectation-Maximization) algorithm.
+This is a PLSA (Probabilistic Latent Semantic Analysis) implementation for large corpora
+using the EM (Expectation-Maximization) algorithm and multiprocessing.
 
-Current issues:
+When modeling large corpora, memory consumption can become a severe bottleneck. This 
+project addresses that problem by using PyTables.
 
-1. The code are not well tested, so it may contain bugs. The test text are in the folder \./texts and \./test.
-2. The code seems not working well with small datasets, such as \./test
+## Requirements
+* [Python 2.7](http://www.python.org/)
+* PyTables
+* Numpy
 
-Reference:
 
-EM introduction: http://blog.tomtung.com/2011/10/em-algorithm
+## License
+This software is available under a [Creative Commons Attribution-NonCommercial-ShareAlike 
+3.0 Unported License (CC BY-NC-SA 3.0)](http://creativecommons.org/licenses/by-nc-sa/3.0/deed.en_US
+), allowing for any non-commercial reuse with appropriate attribution and similar licensing.
 
-PLSA introduction: http://blog.tomtung.com/2011/10/plsa
+## Questions?
+erick [dot] peirson [at] asu [dot] edu
 
-[My lda-with-gibbs repo](https://github.com/hitalex/lda-with-gibbs)
+## Acknowledgements
+This project is run by Erick Peirson and the [Digital Innovation Group (DigInG)](http://devo-evo.lab.asu.edu/diging)
+in the Center for Biology at Arizona State University. This material is based upon work 
+supported by the National Science Foundation Graduate Research Fellowship Program under 
+Grant No. 2011131209.
 
-Note:
-
-*A Tutorial on Probabilistic Latent Semantic Analysis* by [Liangjie Hong](http://www.hongliangjie.com/) is not a very good PLSA introduction material. There are some known bugs.
-
+This project is based on a PLSA implementation by [Liangjie Hong](http://www.hongliangjie.com/).
