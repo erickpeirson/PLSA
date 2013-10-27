@@ -5,6 +5,16 @@ import string
 import tables
 import os
 import numpy as np
+import lxml.etree as ET
+import Levenshtein as L
+from nltk.corpus import wordnet as wn
+from nltk.corpus import stopwords as sw
+from nltk.corpus import words as wds
+
+def strip_non_ascii(string):
+    ''' Returns the string without non ASCII characters'''
+    stripped = (c for c in string if 0 < ord(c) < 127)
+    return ''.join(stripped)
 
 def normalize(vec):
     """Normalize a vector to be a probablistic representation.
@@ -37,9 +47,6 @@ def do_estep(args):
 
     Returns
         True.
-
-    Raises
-        nothing.
     """
 
     d, num_W, num_Z, hdf5_path = args
@@ -113,9 +120,6 @@ def do_mstep_a(args):
         
     Returns
         True.
-
-    Raises
-        nothing.
     """
     
     z, num_W, num_D, hdf5_path  = args
@@ -183,10 +187,7 @@ def do_mstep_b(args):
             3: hdf5_path (str) - path to the HDF5 repository.
 
     Returns
-
-
-    Raises
-        nothing.
+        True.
     """
     
     d, num_Z, num_W, hdf5_path = args
@@ -400,10 +401,187 @@ def performance_test(num_D=10, num_W=200, num_Z=10, processes=4, path="./", data
 
     return iteration_time, estep_duration, mstep_a_duration, mstep_b_duration
 
+class Word(tables.IsDescription):
+    index = tables.Int64Col()
+    string = tables.StringCol(40)
 
-class Corpus:
+
+class Corpus(object):
     def __init__(self, hdf5_path):
-        pass
+        """
+        Args
+            hdf5_path (str) - path to the HDF5 repository (will be created or
+                overwritten).
+        """
+        self.num_D = 0
+        self.num_W = 0
+        
+        self.hdf5_path = hdf5_path
+        file = tables.openFile(hdf5_path, "w")
+        group = file.createGroup("/", "g")
+    
+        vocabulary = file.createTable(group, 'vocabulary', Word)
+        fuzzy_vocabulary = file.createTable(group, 'fuzzy_vocabulary', Word)
+        
+        file.flush()
+        file.close()
+    
+        return
+    
+    def add_word(self, new_word, fuzzy=True):
+        """Adds a new word to the Corpus vocabulary.
+        
+        Args
+            new_word (str) - string representation of word to add to vocabulary.
+        
+        Returns
+            int. index of word in vocabulary.
+            
+        Notes
+            TODO: Check against German and French word lists.
+        """
+        
+        file = tables.openFile(self.hdf5_path, "a")
+        vocabulary = file.root.g.vocabulary
+        fuzzy_vocabulary = file.root.g.fuzzy_vocabulary
+        
+        new = False
+        
+        # Already in vocabulary?
+        exists = new_word in [ x['string'] for x in vocabulary ]
+        if not exists:
+            # Word in WordNet?
+            synset = wn.synsets(new_word)
+            if len(synset) > 0 or new_word in wds.words():
+                new = True
+            # Look for something very similar...
+            else:
+                matches = [ x['index'] for x in vocabulary if 0 < L.distance(x['string'], new_word) < 2 ]
+                if len(matches) > 0:
+                    word = fuzzy_vocabulary.row
+                    word['string'] = new_word
+                    word['index'] = matches[0]  # Use the first match.
+                    word.append()
+                    fuzzy_vocabulary.flush()
+                
+                    index = matches[0]
+                else:
+                    new = True
+        else:
+            index = self.word_index(new_word)
+    
+        if new_word in sw.words():
+            index = False
+        elif new:
+            index = self.num_W
+            word = vocabulary.row
+            word['index'] = index
+            word['string'] = new_word
+            word.append()
+            vocabulary.flush()            
+
+            word = fuzzy_vocabulary.row
+            word['index'] = index
+            word['string'] = new_word
+            word.append()
+            fuzzy_vocabulary.flush()
+            
+            self.num_W += 1
+        file.close()
+    
+        return index
+
+    def word(self, index):
+        """Returns the string representation of a word, given its index.
+        
+        Args
+            index (int) - index of word.
+        
+        Returns
+            string. string representation of word, or
+            None. if no match is found.
+        """
+        
+        file = tables.openFile(self.hdf5_path, "a")
+        vocabulary = file.root.g.vocabulary        
+        
+        result = [ x['string'] for x in vocabulary.where("index == "+str(index))]
+        file.close()
+        
+        try:
+            return result[0]
+        except IndexError:
+            return None
+        
+    def word_index(self, string):
+        """Returns the index of a word, given its string representation.
+        
+        Args
+            string (str) - string representation of word.
+        
+        Returns
+            int. first index of word matching string, or
+            None. if no match is found.
+        """
+        file = tables.openFile(self.hdf5_path, "a")
+        vocabulary = file.root.g.vocabulary        
+        
+        result = [ x['index'] for x in vocabulary.where("string == '"+str(string)+"'")]
+        file.close()
+        
+        try:
+            return result[0]
+        except IndexError:
+            return None
+
+class DFRCorpus(Corpus):
+    """Class for managing JSTOR Data-for-Research datasets."""
+    
+    def __init__(self, hdf5_path):
+        self.files = []
+        super(DFRCorpus, self).__init__(hdf5_path)
+    
+        return
+
+    def add_file(self, path):
+        """Adds a filepath to the Corpus documents list.
+        
+        Args
+            path (str) - path to a text file.
+        
+        Returns
+            None. if the file can be opened.
+            False. if the file cannot be opened (e.g. if it doesn't exist).
+        """
+
+        try:
+            with open(path):
+                self.files.append(path)
+            return None
+        except IOError:
+            return False
+
+    def build_vocabulary(self, fuzzy=True, min_len=4):
+        """Sequentially opens each file in self.documents, and adds any new
+        words to the vocabulary table."""
+
+        for file in self.files:
+            with open(file, 'r') as f:
+                root = ET.fromstring(f.read().replace("&", "&amp;"))
+
+                for elem in root:
+                    word = elem.text.strip(" ")
+                    if len(word) >= min_len:
+                        index = self.add_word(word, fuzzy)
+
+        return
+
+#        d_w = f.createEArray("/g", "document_word", atom=tables.Float64Atom(), expectedrows=num_D, shape=(0, num_W))
+#        
+#        for i in xrange(num_D):
+#            d_w.append(np.random.random(size=(1, num_W)))
+#        f.flush()
+
 
 class pLSA:
     def __init__(self, hdf5_path, num_D, num_W, num_Z=10):
@@ -509,3 +687,10 @@ class pLSA:
             
         print "training complete. " + str(max_iter) + " iterations in " + str(time.time() - start) + " seconds."
         return self.variance_log
+
+if __name__ == "__main__":
+    c = DFRCorpus("./asdf.h5")
+    c.add_file("/Users/erickpeirson/Dropbox/ack/wordcounts_10.2307_2436450.XML")
+    c.add_file("/Users/erickpeirson/Dropbox/ack/wordcounts_10.2307_2436451.XML")
+    c.build_vocabulary()
+    print c.num_W
