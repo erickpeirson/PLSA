@@ -405,7 +405,6 @@ class Word(tables.IsDescription):
     index = tables.Int64Col()
     string = tables.StringCol(40)
 
-
 class Corpus(object):
     def __init__(self, hdf5_path):
         """
@@ -429,7 +428,19 @@ class Corpus(object):
         return
     
     def add_word(self, new_word, fuzzy=True):
-        """Adds a new word to the Corpus vocabulary.
+        """Adds a new word to the Corpus vocabulary. Tries to minimize duplicate
+        entries due to OCR errors. The candidate word, new_word, is evaluated
+        using the following checks:
+            * Is the word already in the vocabulary?
+            * If not, is the word in WordNet? If yes: add the word.
+            * If not, is the word similar to an existing word? If yes: map onto
+                existing word.
+            * Is the word in the NTLK stoplist? If so, don't add it.
+            * Otherwise, add the word.
+            
+        The reason to check WordNet before looking for similar words is to
+        minimize false-positives. E.g. so that "weight" and "eight" aren't
+        collapsed into the same word.
         
         Args
             new_word (str) - string representation of word to add to vocabulary.
@@ -450,12 +461,11 @@ class Corpus(object):
         # Already in vocabulary?
         exists = new_word in [ x['string'] for x in vocabulary ]
         if not exists:
-            # Word in WordNet?
-            synset = wn.synsets(new_word)
+            synset = wn.synsets(new_word)   # Check WordNet.
             if len(synset) > 0 or new_word in wds.words():
                 new = True
-            # Look for something very similar...
-            else:
+            else:   # Look for something very similar...
+                    # TODO: Use a better similarity metric.
                 matches = [ x['index'] for x in vocabulary if 0 < L.distance(x['string'], new_word) < 2 ]
                 if len(matches) > 0:
                     word = fuzzy_vocabulary.row
@@ -470,7 +480,7 @@ class Corpus(object):
         else:
             index = self.word_index(new_word)
     
-        if new_word in sw.words():
+        if new_word in sw.words():  # Apply stoplist.
             index = False
         elif new:
             index = self.num_W
@@ -561,27 +571,35 @@ class DFRCorpus(Corpus):
         except IOError:
             return False
 
-    def build_vocabulary(self, fuzzy=True, min_len=4):
+    def build(self, fuzzy=True, min_len=4):
         """Sequentially opens each file in self.documents, and adds any new
         words to the vocabulary table."""
 
-        for file in self.files:
-            with open(file, 'r') as f:
-                root = ET.fromstring(f.read().replace("&", "&amp;"))
+        self.num_D = len(self.files)    # So that we can use the extendable
+                                        #  dimension for words, not documents.
+                                        # TODO: when PyTables supports multiple
+                                        #  extendable dimensions, let the
+                                        #  corpus grow along that axis.
+        
+        f = tables.openFile(self.hdf5_path, 'a')
+        dw = f.createEArray("/g", "document_word", atom=tables.Float64Atom(), expectedrows=self.num_D, shape=(self.num_D, 0))
+        
+        for i in xrange(len(self.files)):
+            with open(self.files[i], 'r') as file:
+                root = ET.fromstring(file.read().replace("&", "&amp;"))
 
                 for elem in root:
                     word = elem.text.strip(" ")
                     if len(word) >= min_len:
                         index = self.add_word(word, fuzzy)
-
+                        if index >= dw.shape[1]:
+                            dw.append(np.zeros([self.num_D, 1]))
+                            dw.flush()
+                            f.flush()
+                        dw[i, index] = elem.attrib['weight']
+        f.flush()
+        f.close()
         return
-
-#        d_w = f.createEArray("/g", "document_word", atom=tables.Float64Atom(), expectedrows=num_D, shape=(0, num_W))
-#        
-#        for i in xrange(num_D):
-#            d_w.append(np.random.random(size=(1, num_W)))
-#        f.flush()
-
 
 class pLSA:
     def __init__(self, hdf5_path, num_D, num_W, num_Z=10):
@@ -594,6 +612,18 @@ class pLSA:
     
     def train(self, max_iter=10, processes=4):
         """Train the pLSA model using the EM algorithm.
+
+        Multiprocessing approach.
+        The EM algorithm is divided into three parts:
+            E-step: update P(z | d, w)
+            M-step (part A): update P(w | z)
+            M-step (part B): update P(z | d)
+
+        Each step is divided into sub-tasks based on the highest iteration
+        level and distributed to workers. For example, the E-step is divided 
+        into N(d) sub-tasks. Each worker calls a handler (e.g. update_topic, for
+        E-step) that updates the appropriate probability matrix, which keeps 
+        results vectors out of the main process.
         
         Args
             max_iter (int) - Maximum number of iterations to perform on this
@@ -606,19 +636,6 @@ class pLSA:
         """
 
         start = time.time()
-
-        # Multiprocessing approach.
-        # The EM algorithm is divided into three parts:
-        #   E-step: update P(z | d, w)
-        #   M-step (part A): update P(w | z)
-        #   M-step (part B): update P(z | d)
-        #
-        # Each step is divided into sub-tasks based on the highest iteration
-        #   level, which are distributed to workers using multiprocessing. For
-        #   example, the E-step is divided into N(d) sub-tasks. Each worker
-        #   calls a handler (e.g. update_topic, for E-step) that updates the
-        #   appropriate probability matrix, which keeps results vectors out of
-        #   the main process (out of paranoia, if nothing else).
 
         for local_iteration in xrange(0, max_iter):
             # TODO: check for asymptote in self.variance_log, based on a
@@ -680,7 +697,7 @@ class pLSA:
             self.variance_log.append(variance)
             f.close()
 
-            print "finished iteration " + str(local_iteration+1) + " (" + str(self.iteration + 1) + " overall) of " + str(max_iter)
+            print "finished iteration " + str(local_iteration + 1) + " (" + str(self.iteration + 1) + " overall) of " + str(max_iter)
             print "document_topic probability variance: " + str(variance)
 
             self.iteration += 1     # Global counter for the model.
@@ -690,7 +707,11 @@ class pLSA:
 
 if __name__ == "__main__":
     c = DFRCorpus("./asdf.h5")
-    c.add_file("/Users/erickpeirson/Dropbox/ack/wordcounts_10.2307_2436450.XML")
-    c.add_file("/Users/erickpeirson/Dropbox/ack/wordcounts_10.2307_2436451.XML")
-    c.build_vocabulary()
+    basepath = "/Users/erickpeirson/Dropbox/ack/wordcounts"
+    i = 0
+    for file in os.listdir(basepath):
+        c.add_file(basepath + "/" + file)
+        i+= 1
+    print "added " + str(i) + " files to corpus."
+    c.build()
     print c.num_W
