@@ -1,3 +1,4 @@
+.ack.py
 *.py[cod]
 
 # C extensions
