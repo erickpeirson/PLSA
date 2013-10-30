@@ -438,6 +438,8 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes):
     variance to self.variances.
     """
     
+    start_e = time.time()
+    
     m = Manager()
     rqueue = m.Queue()
 
@@ -462,9 +464,10 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes):
         except StopIteration:
             finished = True
 
+    print "finished e-step in " + str(time.time() - start_e)
 
     # M-step part A
-    m_a_start = time.time()
+    start_ma = time.time()
 
     pool = Pool(processes)  # For doing the work.
     TASKS = [ (z, num_W, num_Z, hdf5_path, rqueue) for z in xrange(0, num_Z) ]
@@ -486,8 +489,10 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes):
         except StopIteration:
             finished = True
 
+    print "finished m-step part a in " + str(time.time() - start_ma)
+
     # M-step part B
-    m_b_start = time.time()
+    start_mb = time.time()
 
     pool = Pool(processes)  # For doing the work.
     TASKS = [ ( d, num_Z, num_W, hdf5_path, rqueue ) for d in xrange(0, num_D) ]
@@ -508,6 +513,8 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes):
             jobs.next()
         except StopIteration:
             finished = True
+
+    print "finished m-step part b in " + str(time.time() - start_mb)
 
     # Keep track of variance in document_topic probability, as an
     #  indication of progress in the model training process. Usually
@@ -553,11 +560,11 @@ class pLSA:
         return
         
     def from_data(self):
-        f = tables.openFiles(self.hdf5_path, 'a')
+        f = tables.openFile(self.hdf5_path, 'a')
         
         print "generate a random document_topic probability matrix"
         d_t = f.createEArray("/g", "document_topic", atom=tables.Float64Atom(), expectedrows=self.num_D, shape=(0, self.num_Z))
-        for i in xrange(num_D):
+        for i in xrange(self.num_D):
             d_t.append(np.random.random(size=(1, self.num_Z)))
         f.flush()
 
@@ -610,6 +617,7 @@ class pLSA:
             
             self.variance_log.append(iterate(self.hdf5_path, self.num_D, self.num_W, self.num_Z, processes))
             self.iteration += 1     # Global counter for the model.
+            print "finished iteration "  + str(sef.iteration)
             
         print "training complete. " + str(max_iter) + " iterations in " + str(time.time() - start) + " seconds."
         return self.variance_log
