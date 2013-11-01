@@ -63,16 +63,17 @@ np.set_printoptions(threshold='nan')
 def test_iteration(num_D, num_W, num_Z, processes=4, verbose=False):
     """Do a single iteration."""
     
-    global document_word, document_topic, topic_word, topic, vocabulary_size, number_of_topics
+    global term_doc_matrix, document_topic_prob, topic_word_prob, topic_prob, vocabulary_size, number_of_topics, number_of_documents
     
+    number_of_documents = num_D
     vocabulary_size = num_W
     number_of_topics = num_Z
     
     print "generating some random data"
-    document_word = np.random.random( size = ( num_D, num_W) )
-    document_topic = np.random.random( size = ( num_D, num_Z) )
-    topic_word = np.random.random( size = ( num_Z, num_W ) )
-    topic = np.random.random( size = ( num_D, num_W, num_Z ) )
+    term_doc_matrix = np.random.random( size = ( num_D, num_W) )
+    document_topic_prob = np.random.random( size = ( num_D, num_Z) )
+    topic_word_prob = np.random.random( size = ( num_Z, num_W ) )
+    topic_prob = np.random.random( size = ( num_D, num_W, num_Z ) )
     
     
     iteration_start = time.time()
