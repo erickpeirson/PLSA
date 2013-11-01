@@ -58,7 +58,7 @@ def do_estep(args):
     document_topic = f.root.g.document_topic
     topic_word = f.root.g.topic_word
     
-    dt = document_topic[d, :] # Read from disk.
+    dt = document_topic[d, :]   # Read from disk.
 
     chunk_size = 100 # TODO: Experiment with different chunk sizes, to optimize.
     for i in xrange(0, num_W, chunk_size):
@@ -346,11 +346,10 @@ def performance_test(num_D=10, num_W=200, num_Z=10, processes=4, path="./", data
         processes (int) - number of parallel processes.
     
     Returns
-        tuple. 
-            float. total iteration time.
-            float. average duration of E-step chunk.
-            float. average duration of M-step part A chunk.
-            float. average duration of M-step part B chunk.
+        float. total iteration time.
+        float. average duration of E-step chunk.
+        float. average duration of M-step part A chunk.
+        float. average duration of M-step part B chunk.
     """
 
     print "starting performance test with:"
@@ -363,77 +362,20 @@ def performance_test(num_D=10, num_W=200, num_Z=10, processes=4, path="./", data
     # Generate data and create HDF5 repository.
     r_path = setup_random_tables(num_D, num_W, num_Z, path)
 
-    print "start iteration"
-    iteration_start = time.time()
-
-    # E-step.
-    pool = Pool(processes)
-    TASKS = [ (d, num_W, num_Z, r_path) for d in xrange(0, num_D) ]
-    jobs = pool.imap(do_estep, TASKS)
-    pool.close()
-    pool.join()
+    print "start single iteration"
+    print "-"*40
+    variance, i_duration, e_duration, ma_duration, mb_duration = iterate(r_path, num_D, num_W, num_Z, processes, verbose=True)
+    print "-"*40
     
-    finished = False
-    while not finished:
-        try:
-            jobs.next()
-        except StopIteration:
-            finished = True
-
-    estep_duration = time.time() - iteration_start
-    print "E-step took " + str( estep_duration )
-
-    # M-step part A
-    m_a_start = time.time()
-
-    pool = Pool(processes)
-    TASKS = [ (z, num_W, num_Z, r_path) for z in xrange(0, num_Z) ]
-    jobs = pool.imap(do_mstep_a, TASKS)
-    pool.close()
-    pool.join()
-
-    finished = False
-    while not finished:
-        try:
-            jobs.next()
-        except StopIteration:
-            finished = True
-
-    mstep_a_duration = time.time() - m_a_start
-    print "M-step A took " + str( mstep_a_duration )
-
-    # M-step part B
-    m_b_start = time.time()
-
-    pool = Pool(processes)
-    TASKS = [ ( d, num_Z, num_W, r_path) for d in xrange(0, num_D) ]
-    jobs = pool.imap(do_mstep_b, TASKS)
-    pool.close()
-    pool.join()
-
-    finished = False
-    while not finished:
-        try:
-            jobs.next()
-        except StopIteration:
-            finished = True
-
-    mstep_b_duration = time.time() - m_b_start
-    print "M-step B took " + str( mstep_b_duration )
-
-    iteration_time = time.time() - iteration_start
-    print "finished iteration in " + str( iteration_time )
-
     print "clean up"
     teardown_random_tables(r_path)
 
     print "test complete"
 
-    return iteration_time, estep_duration, mstep_a_duration, mstep_b_duration
+    return i_duration, e_duration, ma_duration, mb_duration
 
 
-
-def iterate(hdf5_path, num_D, num_W, num_Z, processes):
+def iterate(hdf5_path, num_D, num_W, num_Z, processes=4, verbose=False):
     """Do a single iteration, and appends document-topic probability 
     variance to self.variances.
     """
@@ -464,7 +406,9 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes):
         except StopIteration:
             finished = True
 
-    print "finished e-step in " + str(time.time() - start_e)
+    if verbose:
+        e_duration = time.time() - start_e
+        print "finished e-step in " + str(e_duration)
 
     # M-step part A
     start_ma = time.time()
@@ -489,7 +433,9 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes):
         except StopIteration:
             finished = True
 
-    print "finished m-step part a in " + str(time.time() - start_ma)
+    if verbose:
+        ma_duration = time.time() - start_ma
+        print "finished m-step part a in " + str(ma_duration)
 
     # M-step part B
     start_mb = time.time()
@@ -514,7 +460,12 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes):
         except StopIteration:
             finished = True
 
-    print "finished m-step part b in " + str(time.time() - start_mb)
+    if verbose:
+        mb_duration = time.time() - start_mb
+        print "finished m-step part b in " + str(mb_duration)
+
+        i_duration = time.time() - start_e
+        print "iteration took " + str(i_duration)
 
     # Keep track of variance in document_topic probability, as an
     #  indication of progress in the model training process. Usually
@@ -524,6 +475,8 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes):
     variance = np.var(document_topic)
     f.close()
 
+    if verbose:
+        return variance, i_duration, e_duration, ma_duration, mb_duration
     return variance
 
 

@@ -1,9 +1,25 @@
 import re
-from utils import normalize
 import numpy as np
 import time
 import random
 from multiprocessing import Pool
+
+
+def normalize(vec):
+    """Normalize a vector to be a probablistic representation.
+    
+    Args
+        vec (numpy array) - one-dimensional array.
+    
+    Returns
+        none.
+    """
+    s = sum(vec)
+    if abs(s) == 0: print vec
+    assert(abs(s) != 0.0) # the sum must not be 0
+    for i in range(len(vec)):
+        assert(vec[i] >= 0) # element must be >= 0
+        vec[i] = vec[i] * 1.0 / s
 
 # These get passed out to workers.
 def do_estep(d):
@@ -43,6 +59,85 @@ def do_mstep_b(d):
 
 np.set_printoptions(threshold='nan')
 
+
+def test_iteration(num_D, num_W, num_Z, processes=4, verbose=False):
+    """Do a single iteration."""
+    
+    global document_word, document_topic, topic_word, topic, vocabulary_size, number_of_topics
+    
+    vocabulary_size = num_W
+    number_of_topics = num_Z
+    
+    print "generating some random data"
+    document_word = np.random.random( size = ( num_D, num_W) )
+    document_topic = np.random.random( size = ( num_D, num_Z) )
+    topic_word = np.random.random( size = ( num_Z, num_W ) )
+    topic = np.random.random( size = ( num_D, num_W, num_Z ) )
+    
+    
+    iteration_start = time.time()
+    
+    # E-step
+    pool = Pool(processes)
+    TASKS = range(0, num_D)
+    jobs = pool.imap(do_estep, TASKS)
+    pool.close()
+    pool.join()
+    
+    finished = False
+    while not finished:
+        try:
+            jobs.next()
+        except Exception as E:
+            finished = True
+
+    estep_duration = time.time() - iteration_start
+    print "E-step took " + str( estep_duration )
+
+    # M-step part A
+    m_a_start = time.time()
+
+    pool = Pool(processes)
+    TASKS = range(0, num_Z)
+    jobs = pool.imap(do_mstep_a, TASKS)
+    pool.close()
+    pool.join()
+
+    finished = False
+    while not finished:
+        try:
+            jobs.next()
+        except:
+            finished = True
+
+    mstep_a_duration = time.time() - m_a_start
+    print "M-step A took " + str( mstep_a_duration )
+
+    # M-step part B
+    m_b_start = time.time()
+
+    pool = Pool(processes)
+    TASKS = range(0, num_D)
+    jobs = pool.imap(do_mstep_b, TASKS)
+    pool.close()
+    pool.join()
+
+    finished = False
+    while not finished:
+        try:
+            jobs.next()
+        except:
+            finished = True
+
+    mstep_b_duration = time.time() - m_b_start
+    print "M-step B took " + str( mstep_b_duration )
+
+    iteration_time = time.time() - iteration_start
+    print "finished iteration in " + str( iteration_time )
+    
+
+    return iteration_time, estep_duration, mstep_a_duration, mstep_b_duration
+
 class MultiCorpus(object):
 
     '''
@@ -76,6 +171,8 @@ class MultiCorpus(object):
                 discrete_set.add(word)
         self.vocabulary = list(discrete_set)
         
+        
+
 
     def plsa(self, nt, max_iter, processes=4):
         '''
