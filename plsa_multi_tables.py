@@ -375,6 +375,8 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes=4, verbose=False):
     variance to self.variances.
     """
     
+    if verbose: print "start of iteration"
+    
     start_e = time.time()
     
     m = Manager()
@@ -532,7 +534,7 @@ class pLSA:
         return
 
     
-    def train(self, max_iter=10, processes=4):
+    def train(self, max_iter=10, processes=4, verbose=False):
         """Train the pLSA model using the EM algorithm.
 
         Multiprocessing approach.
@@ -563,9 +565,10 @@ class pLSA:
             # TODO: check for asymptote in self.variance_log, based on a
             #   specifiable delta threshold.
             
-            self.variance_log.append(iterate(self.hdf5_path, self.num_D, self.num_W, self.num_Z, processes))
+            var = iterate(self.hdf5_path, self.num_D, self.num_W, self.num_Z, processes, verbose=verbose)
+            self.variance_log.append(var)
             self.iteration += 1     # Global counter for the model.
-            print "finished iteration "  + str(sef.iteration)
+            print "finished iteration "  + str(self.iteration)
             
         print "training complete. " + str(max_iter) + " iterations in " + str(time.time() - start) + " seconds."
         return self.variance_log
