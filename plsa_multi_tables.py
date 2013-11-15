@@ -107,9 +107,7 @@ def update_topic(args):
                                 # result is a matrix of P(z, w) for document d.
 
     f = tables.openFile(hdf5_path, 'a')
-    topic = f.root.g.topic
-    topic[d, :] = result
-    topic.flush()
+    f.root.g.topic[d, :] = result
     f.flush()
     f.close()
     
@@ -186,9 +184,8 @@ def update_topic_word(args):
                                 #  topic z.
 
     f = tables.openFile(hdf5_path, 'a')
-    topic_word = f.root.g.topic_word
-    topic_word[z, : ] = result
-    topic_word.flush()
+
+    f.root.g.topic_word[z, : ] = result
 
     f.flush()
     f.close()
@@ -263,10 +260,8 @@ def update_document_topic(args):
                                 #  document d.
     
     f = tables.openFile(hdf5_path, 'a')
-    document_topic = f.root.g.document_topic
     
-    document_topic[d, : ] = result
-    document_topic.fush()
+    f.root.g.document_topic[d, : ] = result
     f.flush()
     f.close()
     return True
@@ -334,7 +329,7 @@ def teardown_random_tables(path):
 
     return os.remove(path)
 
-def performance_test(num_D=10, num_W=200, num_Z=10, processes=4, path="./", data="asdf"):
+def performance_test(num_D=10, num_W=200, num_Z=10, processes=4, path="./"):
     """For testing performance of EM algorithm under various conditions, using
     PyTables and multiprocessing. Generates random data based on args, sets up 
     PyTables, and runs the EM algorithm.
@@ -419,7 +414,7 @@ def iterate(hdf5_path, num_D, num_W, num_Z, processes=4, verbose=False):
     pool.close()
 
     qpool = Pool(1)         # For processing results.
-    QTASKS = [ (hdf5_path, rqueue, z) for z in xrange(0, num_Z) ]
+    QTASKS = [ (hdf5_path, rqueue) for z in xrange(0, num_Z) ]
     qjobs = qpool.imap(update_topic_word, QTASKS)
     qpool.close()
 
